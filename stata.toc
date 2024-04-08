@@ -1,0 +1,25 @@
+v 15.0
+d Materials by Emilia Tjernstrom (1), Dalia Ghanem (2), Oscar Barriga-Cabanillas (3), Travis J. Lybbert (2), Aleksandr Michuda (4), Jeffrey D. Michler (5)
+d
+d 1. Monash University
+d emilia.tjernstrom@monash.edu
+d 
+d 2. University of California, Davis
+d dghanem@ucdavis.edu
+d tlybbert@ucdavis.edu
+d
+d 3. World Bank
+d obarriga@worldbank.org
+d
+d 4. Cornell University
+d am2497@cornell.edu
+d 
+d 5. University of Arizona
+d jdmichler@arizona.edu
+d 
+d https://github.com/amichuda/weakidri
+d
+d 'weakidri': A Stata command that uses a grid search to find weak identification robust confidence intervals for the 
+d  `phi` parameter in Suri (2011)
+
+p weakidri

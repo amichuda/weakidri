@@ -1,0 +1,9 @@
+v 1.0.0
+d 'GRC_WEAK_ID_ROBUST_INFERENCE': A Stata command that uses a grid search to find weak identification robust confidence intervals for the 
+d  `phi` parameter in Suri (2011)
+d 
+d 
+d Distribution-Date:   20240403
+d License: MIT
+d 
+F grc_weak_id_robust_inference.ado
