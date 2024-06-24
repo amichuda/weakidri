@@ -1,3 +1,5 @@
+*! v1.0.0 - Aleksandr Michuda, am2497@cornell.edu
+
 program define weakidri, rclass
     version 16.0
     syntax varname [if], hhid(varname) Hybrid(varname) MIn(real) MAx(real) INCrement(real) [STORE_results(name) progress(integer 1) path(string) TEST_type(string) BASEgroup(integer 2) type_one(real 0.05) ADD_post(string) controls(varlist fv)]
