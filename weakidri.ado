@@ -2,7 +2,7 @@
 
 program define weakidri, rclass
     version 16.0
-    syntax varname [if], hhid(varname) Hybrid(varname) MIn(real) MAx(real) INCrement(real) [STORE_results(name) progress(integer 1) path(string) TEST_type(string) BASEgroup(integer 2) type_one(real 0.05) ADD_post(string) controls(varlist fv)]
+    syntax varname [if], hhid(varname) Hybrid(varname) MIn(real) MAx(real) INCrement(real) [STORE_results(name) progress(integer 1) path(string) TEST_type(string) BASEgroup(integer 2) type_one(real 0.05) ADD_post(string) controls(varlist fv) ENDOgenous(varname) time(varname) endo_factor]
     /*
         Program that carries out a brute force search for phi for an outcome `varname', with household ID `hhid', and
         hybrid variable `hybrid', and optionally, controls `controls'.
@@ -40,6 +40,9 @@ program define weakidri, rclass
             type_one(real, optional): The Type-I error of the test. Defaults to 0.05
             add_post(string, optional): Optionally save another parameter to the simulation dataset. Only for use with `path'
             controls(varlist, optional): Optionally include controls into the regression
+            endogenous(varname, optional): Optionally include an endogenous covariate to co-determine theta along with adoption.
+            endo_factor (optionally on, optional): Optionally specify that the endogenous variable is a factor variable so that the regression will use `i` syntax. 
+                Otherwise, a continuous variable is assumed.
 
         Returns:
             r(min_phi`i'`j'): The minimum phi that failed to reject the test; the left side of the confidence interval for `phi', for switching trajectories `i' and `j'
@@ -63,11 +66,25 @@ program define weakidri, rclass
     }
 
     if "`test_type'" == "base" {
-        postfile `memhold' phi p_val`basegroup'3 p_val`basegroup'4 p_val`basegroup'5 p_val`basegroup'6 p_val`basegroup'7 str20(test_type add) using `results_data', replace
+        local memhold_vars `"phi p_val`basegroup'3 p_val`basegroup'4 p_val`basegroup'5 p_val`basegroup'6 p_val`basegroup'7" p_val_joint'
+        if "`endogenous'" != "" {
+            local memhold_vars `"`memhold_vars' p_val_endo_1`basegroup'3 p_val_endo_1`basegroup'4 p_val_endo_1`basegroup'5 p_val_endo_1`basegroup'6 p_val_endo_1`basegroup'7"'
+            local memhold_vars `"`memhold_vars' p_val_endo_2`basegroup'3 p_val_endo_2`basegroup'4 p_val_endo_2`basegroup'5 p_val_endo_2`basegroup'6 p_val_endo_2`basegroup'7"'
+
+        }
+    }
+    else if "`test_type'" == "joint" {
+        local memhold_vars `"phi p_val_joint"'
     }
     else {
-	    postfile `memhold' phi p_val32 p_val43 p_val54 p_val65 p_val76 str20(test_type add) using `results_data', replace
+        local memhold_vars `"phi p_val32 p_val43 p_val54 p_val65 p_val76"'
+        if "`endogenous'" != "" {
+            local memhold_vars `"`memhold_vars' p_val_endo_1_32 p_val_endo_1_43 p_val_endo_1_54 p_val_endo_1_65 p_val_endo_1_76"'
+            local memhold_vars `"`memhold_vars' p_val_endo_2_32 p_val_endo_2_43 p_val_endo_2_54 p_val_endo_2_65 p_val_endo_2_76"'
+        }
     }
+
+    postfile `memhold' `memhold_vars' str20(test_type add) using `results_data', replace
 
 
     local          never 1
@@ -91,20 +108,57 @@ program define weakidri, rclass
     else {
         local controls
     }
-    di "`controls'"
-    * Check if controls exist
-    if "`controls'" != "" {
-        local controls_gmm_exp - {xb:`controls'}
-    }
-        * First run OLS to get initial values for GMM
-        reg             `varlist' i(`noalways').trajectory                ///
-                    i(`switchers' `always').trajectory#1.`hybrid' 	         ///
-                    `controls' ///
-                    `if', vce(cluster `hhid') nocons
 
-        if "`store_results'" != "" {
-            estimates store `store_results'
+    if "`endo_factor'" == "endo_factor" {
+        local ef  i
+    }
+    else {
+        local ef  c
+    }
+
+    * If endo is included, widen variable repeated by household
+    if "`endogenous'" != "" {
+        if "`time'" == "" {
+            di as err "if endogenous is specified, a time variable must also be specified."
+            exit 102
         }
+        preserve
+            keep `hhid' `time' `endogenous'
+            reshape wide `endogenous', i(`hhid') j(`time')
+            * save new variable names
+            local endo_wide_vars: char _dta[ReS_Xij_wide1]
+            tempfile endo_
+            save `endo_'
+        restore
+
+        merge m:1 `hhid' using `endo_'
+        drop _merge
+    }
+
+    if "`endogenous'" == "" {
+         reg    `varlist' i(`noalways').trajectory                ///
+                i(`switchers' `always').trajectory#1.`hybrid' 	         ///
+                `controls' ///
+                `if', vce(cluster `hhid') nocons
+
+    }
+
+    else {
+        * create interactions with new endogenous variable
+        local endo_interactions 
+
+        foreach endo_var of local endo_wide_vars {
+            local endo_interactions `endo_interactions' i(`noalways').trajectory#`ef'.`endo_var' i(`switchers'  `always').trajectory#1.`hybrid'#`ef'.`endo_var'
+        }       
+
+        reg    `varlist' i(`noalways').trajectory i(`switchers'  `always').trajectory#1.`hybrid' ///
+        `controls' `endogenous' `endo_interactions' ///
+        `if', vce(cluster `hhid') nocons
+    }
+
+    if "`store_results'" != "" {
+        estimates store `store_results'
+    }
 
 
     qui ereturn list
@@ -114,8 +168,9 @@ program define weakidri, rclass
 	We test for a plethora of phi values
 	*/
     if `progress' == 1 {
-        _dots 0, title("Running Tests...")
+        _dots 0, title("Running Weak-ID Robust Inference Test for hhid: `hhid', controls: `controls' and endogenous variables: `endogenous', with min: `min', max: `max' and increment: `increment'")
     }
+
 
 	forvalues phi_potential = `=`min''(`=`increment'')`=`max'' {
 
@@ -126,20 +181,28 @@ program define weakidri, rclass
         }
 
         qui tab trajectory
-        local test_string ""
-        if r(r) == 4 {
+        local test_string 
+        if r(r) == 4 & "`endogenous'" == "" {
             local test_type = "joint"
-            * If T=2, joint and separate are the same
+            * If T=2, with no endogenous covariates, joint and separate are the same
+            * No longer the case, but keeping here for posterity for
         }
         if "`test_type'" == "joint" {
             forvalues i = `=`r(r)'-1'(-1)3 {
                 local test_string ((`i'.trajectory#1.`hybrid'- `=`i'-1'.trajectory#1.`hybrid') = `phi_potential'*(`i'.trajectory-`=`i' -1'.trajectory)) `test_string'
+            
+                if "`endogenous'" != "" {
+                    * add endogenous covariates to test_string
+                    foreach endo_var of local endo_wide_vars {
+                        local test_string ((`i'.trajectory#1.`hybrid'#`ef'.`endo_var' - `=`i'-1'.trajectory#1.`hybrid'#`ef'.`endo_var') = `phi_potential'*(`i'.trajectory#`ef'.`endo_var' -`=`i' -1'.trajectory#`ef'.`endo_var')) `test_string'
+                    }
+                }
             }
             `qui' test `test_string'
             qui return list
 
             loc p_v = r(p)
-            post `memhold' (`phi_potential') (`p_v') (.) (.) (.) (.) ("`test_type'") ("`add_post'")
+            post `memhold' (`phi_potential') (`p_v') ("`test_type'") ("`add_post'") 
 
         }
         else if "`test_type'" == "separate" {
@@ -148,14 +211,35 @@ program define weakidri, rclass
                 `qui' test ((`i'.trajectory#1.`hybrid'-`=`i'-1'.trajectory#1.`hybrid') = `phi_potential'*(`i'.trajectory-`=`i' -1'.trajectory))
                 scalar p_v_`i' = r(p)
             }
-            post `memhold' (`phi_potential') (p_v_3) (p_v_4) (p_v_5) (p_v_6) (p_v_7) ("`test_type'") ("`add_post'")
+
+            local memhold_save `"(p_v_3) (p_v_4) (p_v_5) (p_v_6) (p_v_7)"'
+
+            if "`endogenous'" != "" {
+                * add endogenous covariates to test_string
+                foreach endo_var of local endo_wide_vars {
+                    forvalues i = `=`r(r)'-1'(-1)3 {
+                        `qui' test ((`i'.trajectory#1.`hybrid'#`ef'.`endo_var' - `=`i'-1'.trajectory#1.`hybrid'#`ef'.`endo_var') = `phi_potential'*(`i'.trajectory#`ef'.`endo_var' -`=`i' -1'.trajectory#`ef'.`endo_var')) `test_string'
+                        scalar p_v_`i'_`endo_var' = r(p)
+                    }
+                    local memhold_save `"`memhold_save' (p_v_3_`endo_var') (p_v_4_`endo_var') (p_v_5_`endo_var') (p_v_6_`endo_var') (p_v_7_`endo_var')"' 
+                }
+
+            }
+            post `memhold' (`phi_potential') `memhold_save' ("`test_type'") ("`add_post'")
         }
 
         else if "`test_type'" == "base" {
             if "basegroup" == "" {
-                di "Base group not chosen. Choosing trajectory 1 (001)"
-                exit
+                di "Base group not chosen. Choosing trajectory 1"
+                local basegroup 1
             }
+
+            if "`endogenous'" != "" {
+                di in error "Using a trajectory as base with endogenous variables not implemented."
+                exit 187
+            }
+
+            local test_string 
 
             forvalues i = 2(1)`=`r(r)'-1' {
                 if `i' == `basegroup' {
@@ -180,10 +264,24 @@ program define weakidri, rclass
 
     preserve
         use `results_data', clear
-
         destring *, replace
 
-        if test_type == "joint" | test_type == "separate" {
+        if test_type == "joint" {
+            gen not_sig = (p_val_joint>=`type_one')
+            su phi if not_sig == 1
+
+            gen min_phi = round(r(min),0.001)
+            gen max_phi = round(r(max),0.001)
+
+            loc min_phi = round(r(min),0.001)
+            loc max_phi = round(r(max),0.001)
+            loc mean_phi = r(mean)
+
+            return local min_phi = `min_phi'
+            return local max_phi = `max_phi'
+        }
+
+        if test_type == "separate" {
             gen not_sig32 = (p_val32>=`type_one')
             su phi if not_sig32 == 1
 
@@ -196,9 +294,7 @@ program define weakidri, rclass
 
             return local min_phi32 = `min_phi32'
             return local max_phi32 = `max_phi32'
-        }
 
-        if test_type == "separate" {
             forval i=4/7 {
                 gen not_sig`i'`=`i'-1' = (p_val`i'`=`i'-1' >= `type_one')
                 su phi if not_sig`i'`=`i'-1' ==1
@@ -232,7 +328,7 @@ program define weakidri, rclass
         }
 
         if "`path'" != "" {
-        save "`path'", replace
+            save "`path'", replace
         }
 
     restore
