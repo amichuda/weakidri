@@ -1,3 +1,4 @@
+*! v1.1.0 - Added ability to include endogenous covariates
 *! v1.0.0 - Aleksandr Michuda, am2497@cornell.edu
 
 program define weakidri, rclass
