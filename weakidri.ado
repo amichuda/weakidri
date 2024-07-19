@@ -86,7 +86,7 @@ program define weakidri, rclass
         }
     }
 
-    postfile `memhold' `memhold_vars' str20(test_type add) using `results_data', replace
+    postfile `memhold' `memhold_vars' str20(test_type add) using "`results_data'", replace
 
 
     local          never 1
