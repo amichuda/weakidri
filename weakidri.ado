@@ -264,7 +264,7 @@ program define weakidri, rclass
     postclose `memhold'
 
     preserve
-        use `results_data', clear
+        use "`results_data'", clear
         destring *, replace
 
         if test_type == "joint" {
