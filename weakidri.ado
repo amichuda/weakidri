@@ -1,3 +1,4 @@
+*! v1.1.1 - Small change to how results are opened after running inference procedure
 *! v1.1.0 - Added ability to include endogenous covariates
 *! v1.0.0 - Aleksandr Michuda, am2497@cornell.edu
 
